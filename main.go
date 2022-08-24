@@ -78,6 +78,7 @@ func (f *FilesToProcess) Add(newFile FileToProcess) {
 // Their contents will be saved, if the symbol is found
 var constantLinuxDataSymbols = []string{"linux_banner"}
 var constantMacosDataSymbols = []string{"version"}
+var constantFreebsdDataSymbols = []string{"version"}
 
 // The compiler can add a leading underscore to symbol names in the symbol
 // table. To match the names from a mach-O file to those in the DWARF file, the
@@ -127,6 +128,7 @@ type unixMetadata struct {
 type vtypeMetadata struct {
 	Linux    *unixMetadata     `json:"linux,omitempty"`
 	Mac      *unixMetadata     `json:"mac,omitempty"`
+	FreeBSD  *unixMetadata     `json:"freebsd,omitempty"`
 	Producer map[string]string `json:"producer"`
 	Format   string            `json:"format"`
 }
@@ -596,8 +598,9 @@ func main() {
 A tool for generating intermediate symbol file (ISF)
 
 Commands:
-  linux  generate ISF for Linux analysis
-  mac    generate ISF for macOS analysis
+  linux  	generate ISF for Linux analysis
+  mac    	generate ISF for macOS analysis
+  freebsd	generate ISF for FreeBSD analysis
 
 `,
 			os.Args[0])
@@ -624,6 +627,16 @@ Commands:
 	linuxArgs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s linux [OPTIONS]\n\n", TOOL_NAME)
 		linuxArgs.PrintDefaults()
+	}
+
+	// freebsd subcommand setup
+	freebsdArgs := pflag.NewFlagSet("freebsd", pflag.ExitOnError)
+	bsdsystemMapPaths := freebsdArgs.StringArray("system-map", nil, "System.Map file `PATH` to extract symbol information")
+	freebsdPaths := freebsdArgs.StringArray("elf", nil, "ELF file `PATH` to extract symbol and type information")
+	freebsdPathsDbg := freebsdArgs.StringArray("elf-debug", nil, "ELF debug file `PATH` to extract symbol and type information")
+	freebsdArgs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s freebsd [OPTIONS]\n\n", TOOL_NAME)
+		freebsdArgs.PrintDefaults()
 	}
 
 	if len(os.Args) < 2 {
