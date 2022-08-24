@@ -724,6 +724,39 @@ Commands:
 			os.Exit(1)
 		}
 
+	case "freebsd":
+		freebsdArgs.Parse(os.Args[2:])
+
+		var filesToProcess FilesToProcess
+
+		// Type and Symbols (kernel.debug)
+		for _, filePath := range *freebsdPathsDbg {
+			filesToProcess.Add(FileToProcess{FilePath: filePath, Extract: DwarfSymbols | SymTabSymbols | DwarfTypes})
+			//filesToProcess.Add(FileToProcess{FilePath: filePath, Extract: SymTabSymbols | ConstantData})
+		}
+
+		// Type and Symbols (kernel)
+		for _, filePath := range *freebsdPaths {
+			filesToProcess.Add(FileToProcess{FilePath: filePath, Extract: SymTabSymbols | ConstantData})
+		}
+
+		// System.Map processing
+		for _, filePath := range *bsdsystemMapPaths {
+			filesToProcess.Add(FileToProcess{FilePath: filePath, Extract: SystemMap})
+		}
+
+		if len(filesToProcess) == 0 {
+			fmt.Fprintf(os.Stderr, "No files specified\n")
+			freebsdArgs.Usage()
+			os.Exit(1)
+		}
+
+		doc, err = generateFreeBSD(filesToProcess)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed freebsd processing: %v\n", err)
+			os.Exit(1)
+		}
+
 	case "-h", "--help":
 		pflag.Usage()
 		os.Exit(0)
@@ -1036,6 +1069,90 @@ func generateLinux(files FilesToProcess) (*vtypeJson, error) {
 
 	}
 	doc.Metadata.Linux = linuxMeta
+	return doc, nil
+}
+
+func generateFreeBSD(files FilesToProcess) (*vtypeJson, error) {
+
+	doc := newVtypeJson()
+	bsdMeta := new(unixMetadata)
+
+	for _, f := range files {
+		var elfFile *elf.File
+		var err error
+
+		// process system map text, and skip to next file
+		if extract := f.Extract & (SystemMap); extract != 0 {
+			r, err := os.Open(f.FilePath)
+			if err != nil {
+				return nil, fmt.Errorf("could not open %s: %v", f.FilePath, err)
+			}
+
+			if err := processSystemMap(doc, r); err != nil {
+				return nil, fmt.Errorf("error processing system map: %v", err)
+			}
+
+			// Add meta information
+			fileMeta := newSourceMetadata(f.FilePath)
+			fileMeta.Kind = "system-map"
+			bsdMeta.Symbols = append(bsdMeta.Symbols, fileMeta)
+
+			continue
+		}
+
+
+		// process binary elf files
+		elfFile, err = elf.Open(f.FilePath)
+		if err != nil {
+			return nil, fmt.Errorf("could not open %s: %v", f.FilePath, err)
+		}
+		defer elfFile.Close()
+
+		// process dwarf
+		if extract := f.Extract & (DwarfTypes | DwarfSymbols); extract != 0 {
+			var endian string
+
+			if elfFile.ByteOrder == binary.LittleEndian {
+				endian = "little"
+			} else {
+				endian = "big"
+			}
+
+			data, err := DWARF(elfFile)
+			if err != nil {
+				return nil, fmt.Errorf("could not get DWARF from %s: %v", f.FilePath, err)
+
+			}
+
+			if err = doc.addDwarf(data, endian, extract); err != nil {
+				return nil, fmt.Errorf("error processing DWARF: %v", err)
+			}
+
+			// Add meta information
+			fileMeta := newSourceMetadata(f.FilePath)
+			fileMeta.Kind = "dwarf"
+			if f.Extract&DwarfSymbols != 0 {
+				bsdMeta.Symbols = append(bsdMeta.Symbols, fileMeta)
+			}
+			if f.Extract&DwarfTypes != 0 {
+				bsdMeta.Types = append(bsdMeta.Types, fileMeta)
+			}
+		}
+
+		// process symtab
+		if extract := f.Extract & (SymTabSymbols | ConstantData); extract != 0 {
+			if err := processElfSymTab(doc, elfFile, extract, osInfo_freebsd); err != nil {
+				return nil, fmt.Errorf("error processing symtab: %v", err)
+			}
+
+			// Add meta information
+			fileMeta := newSourceMetadata(f.FilePath)
+			fileMeta.Kind = "symtab"
+			bsdMeta.Symbols = append(bsdMeta.Symbols, fileMeta)
+		}
+
+	}
+	doc.Metadata.FreeBSD = bsdMeta
 	return doc, nil
 }
 
