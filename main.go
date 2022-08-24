@@ -57,6 +57,11 @@ type FileToProcess struct {
 	Extract  Extract
 }
 
+type OsInfo struct {
+	constantDataSymbols []string
+	elfSectionName string
+}
+
 // FilesToProcess is a list of file that need processing
 type FilesToProcess []FileToProcess
 
@@ -76,9 +81,9 @@ func (f *FilesToProcess) Add(newFile FileToProcess) {
 
 // The symbol names are part of Linux's or Mac's read-only data
 // Their contents will be saved, if the symbol is found
-var constantLinuxDataSymbols = []string{"linux_banner"}
-var constantMacosDataSymbols = []string{"version"}
-var constantFreebsdDataSymbols = []string{"version"}
+var osInfo_linux = OsInfo{constantDataSymbols: []string{"linux_banner"}, elfSectionName: ".rodata"}
+var osInfo_mac = OsInfo{constantDataSymbols: []string{"version"}, elfSectionName: ".rodata"}
+var osInfo_freebsd = OsInfo{constantDataSymbols: []string{"version"}, elfSectionName: ".data"}
 
 // The compiler can add a leading underscore to symbol names in the symbol
 // table. To match the names from a mach-O file to those in the DWARF file, the
@@ -890,7 +895,7 @@ func processMachoSymTab(doc *vtypeJson, machoFile *macho.File, extract Extract) 
 
 	// we convert the constantDataSymbols slice to a map for fast lookups
 	constantDataMap := make(map[string]bool)
-	for _, constantSymbol := range constantMacosDataSymbols {
+	for _, constantSymbol := range osInfo_mac.constantDataSymbols {
 		constantDataMap[constantSymbol] = false
 	}
 
@@ -1019,7 +1024,7 @@ func generateLinux(files FilesToProcess) (*vtypeJson, error) {
 
 		// process symtab
 		if extract := f.Extract & (SymTabSymbols | ConstantData); extract != 0 {
-			if err := processElfSymTab(doc, elfFile, extract); err != nil {
+			if err := processElfSymTab(doc, elfFile, extract, osInfo_linux); err != nil {
 				return nil, fmt.Errorf("error processing symtab: %v", err)
 			}
 
@@ -1064,7 +1069,7 @@ func processSystemMap(doc *vtypeJson, systemMap io.Reader) error {
 }
 
 // processElfSymTab adds missing symbol information from SymTab to the vtypeJson doc
-func processElfSymTab(doc *vtypeJson, elfFile *elf.File, extract Extract) error {
+func processElfSymTab(doc *vtypeJson, elfFile *elf.File, extract Extract, osinfo OsInfo) error {
 	if doc == nil {
 		return fmt.Errorf("invalid vtypeJSON: nil")
 	}
@@ -1074,7 +1079,7 @@ func processElfSymTab(doc *vtypeJson, elfFile *elf.File, extract Extract) error 
 
 	// we convert the constantDataSymbols slice to a map for fast lookups
 	constantDataMap := make(map[string]bool)
-	for _, constantSymbol := range constantLinuxDataSymbols {
+	for _, constantSymbol := range osinfo.constantDataSymbols {
 		constantDataMap[constantSymbol] = false
 	}
 
@@ -1107,7 +1112,7 @@ func processElfSymTab(doc *vtypeJson, elfFile *elf.File, extract Extract) error 
 		if !ok {
 			return
 		}
-		data, _ := readELFSymbol(elfFile, elfsym, ".rodata")
+		data, _ := readELFSymbol(elfFile, elfsym, osinfo.elfSectionName)
 		sym.ConstantData = data
 		doc.Symbols[elfsym.Name] = sym
 	}
