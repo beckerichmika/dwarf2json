@@ -539,12 +539,12 @@ func newBasetype(dwarfType dwarf.Type, endian string) *vtypeBaseType {
 	return bt
 }
 
-func readELFSymbol(file *elf.File, symbol elf.Symbol) ([]byte, error) {
+func readELFSymbol(file *elf.File, symbol elf.Symbol, sectionName string) ([]byte, error) {
 	var result []byte
 	var err error
 
 	for _, section := range file.Sections {
-		if section.Name == ".rodata" &&
+		if section.Name == sectionName &&
 			(section.Flags&elf.SHF_ALLOC) == elf.SHF_ALLOC &&
 			section.Addr <= symbol.Value &&
 			(section.Addr+section.Size) >= (symbol.Value+symbol.Size) {
@@ -1107,7 +1107,7 @@ func processElfSymTab(doc *vtypeJson, elfFile *elf.File, extract Extract) error 
 		if !ok {
 			return
 		}
-		data, _ := readELFSymbol(elfFile, elfsym)
+		data, _ := readELFSymbol(elfFile, elfsym, ".rodata")
 		sym.ConstantData = data
 		doc.Symbols[elfsym.Name] = sym
 	}
