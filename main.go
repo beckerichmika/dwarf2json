@@ -1170,7 +1170,9 @@ func processSystemMap(doc *vtypeJson, systemMap io.Reader) error {
 		words := strings.Fields(line)
 		addr, err := strconv.ParseUint(words[0], 16, 64)
 		if err != nil {
-			return fmt.Errorf("failed parsing %s", line)
+			// HACK: Skip symbol instead of aborting
+			fmt.Errorf("failed parsing %s", line)
+			continue
 		}
 		symName := words[2]
 
